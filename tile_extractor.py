@@ -1,4 +1,4 @@
-import argparse, os, random
+import argparse, os
 from PIL import Image, ImageDraw
 
 import numpy as np
