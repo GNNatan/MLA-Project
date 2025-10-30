@@ -8,17 +8,6 @@ import random
 import numpy as np
 
 from MIL import AttentionMIL
-#from geometry import tumor, is_inside, index_to_coords
-
-def bags_from_image(slide_name, n_bags = 4):
-    bags = []
-    labels = []
-    path = '' #from slide_name to path
-    patches = torch.from_numpy(np.load(path))
-    samples = patches.size(0)
-    for _ in range(n_bags):
-        pass
-    return 0
 
 class Dummy(torch.utils.data.Dataset):
     def __init__(self, n_bags=200, n_instances=10, input_dim=32):
@@ -81,4 +70,6 @@ for epoch in range(n_epochs):
 
 bag, label = dataset[0]
 _, A = model(bag.to(device))
-print("Attention weights:", A.squeeze().detach().cpu().numpy())
+a = A.squeeze().detach().cpu().numpy()
+print("Attention weights:", a)
+a.size()
