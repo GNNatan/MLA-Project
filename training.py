@@ -1,61 +1,69 @@
-# made to test MIL
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import random
 
 import numpy as np
-
 from MIL import AttentionMIL
-#from geometry import tumor, is_inside, index_to_coords
+from geometry import tumor, is_inside, index_to_coords
+
+
+train = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
 def bags_from_image(slide_name, n_bags = 4):
     bags = []
     labels = []
-    path = '' #from slide_name to path
+    path = '' #from slide_name get .npy
+    label_path = '' #from slide_name get .xml
+    region = tumor(label_path)
     patches = torch.from_numpy(np.load(path))
-    samples = patches.size(0)
-    for _ in range(n_bags):
-        pass
-    return 0
+    n_samples = patches.size(0)
+    base_size = n_samples// n_bags
+    remainder = n_samples % n_bags
+    start = 0
+    for i in range(n_bags):
+        end = start + base_size
+        if (i == n_bags - 1):
+            end += remainder
+        bag = patches[start:end]
+        bags.append(bag)
+        label = 0
+        while (start != end):
+            x, y = index_to_coords(start, slide_name)
+            if is_inside(x, y, region):
+                label = 1
+                start = end
+            else:
+                start += 1
+        labels.append(label)
+    return bags, labels
 
-class Dummy(torch.utils.data.Dataset):
-    def __init__(self, n_bags=200, n_instances=10, input_dim=32):
+class Training_Set(torch.utils.data.Dataset):
+    def __init__(self, train = train, bags_per_image = 4):
         self.bags = []
         self.labels = []
-        for _ in range(n_bags):
-            bag = torch.randn(n_instances, input_dim)
-            if random.random() > 0.5:
-                bag[torch.randint(0, n_instances, (1,))] += 2.0
-                label = 1
-            else:
-                label = 0
-            self.bags.append(bag)
-            self.labels.append(label)
-
+        for t in train:
+            b, l = bags_from_image(t, bags_per_image)
+            self.bags.extend(b)
+            self.labels.extend(l)
+    
     def __len__(self):
         return len(self.bags)
     
     def __getitem__(self, idx):
         return self.bags[idx], torch.tensor(self.labels[idx], dtype=torch.float32)
-    
-    def debug(self):
-        tensor = self.bags[1]
-        print(tensor.size(0))
+
 
 #training
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-input_dim = 32
+input_dim = 2048
 hidden_dim = 64
 n_epochs = 10
 lr = 1e-3
 
-dataset = Dummy()
+dataset = Training_Set()
 loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
-dataset.debug()
 
 model = AttentionMIL(input_dim, hidden_dim).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
