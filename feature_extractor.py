@@ -5,6 +5,9 @@ from PIL import Image
 import numpy as np
 from tqdm import tqdm
 
+import os
+from utils import tile_number
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 preprocess = transforms.Compose([
@@ -30,3 +33,24 @@ def extract_features(patches, model):
             feat = feat.squeeze().cpu().numpy()
             features.append(feat)
     return np.stack(features)
+
+if __name__ == "__main__":
+    feat_extractor = create_feature_extractor()
+    output_dir = "feats"
+    os.makedirs(output_dir, exist_ok=True)
+    folders = [f"tiles/{i}" for i in range(1, 25)]
+    for folder in folders:
+        print(f"Reading {folder}")
+        patches = []
+        files = os.listdir(folder)
+        files = [f for f in files if f.startswith("tile_") and f.endswith(".png")]
+        files_sorted = sorted(files, key = tile_number)
+        for filename in tqdm(files_sorted):
+            full_path = os.path.join(folder, filename)
+            with Image.open(full_path) as img:
+                patch = np.array(img)
+                patches.append(patch)
+        save_name = folder.split("/")[1]
+        print(f"Extracting features from {folder}")
+        feat = extract_features(patches, feat_extractor)
+        np.save(f"{os.path.join(output_dir, save_name)}.npy", feat)

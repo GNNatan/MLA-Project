@@ -1,12 +1,12 @@
 import os
 from PIL import Image, ImageDraw
-import re
+from utils import tile_number, tile_x, tile_y
 import xml.etree.ElementTree as ET
 from shapely.geometry import Point, Polygon
 from tiatoolbox.wsicore.wsireader import WSIReader
 from tqdm import trange
 
-def tumor(file):
+def get_polygon(file):
     vertices = []
     tree = ET.parse(file)
     root = tree.getroot()
@@ -28,11 +28,11 @@ def is_inside(x, y, polygon):
 def index_to_coords(index:int, slide_name = "1", center = True):
     tiles_path = f"tiles/{slide_name}"
     tiles = os.listdir(tiles_path)
-    index += 1 # skip overview
+    tiles = [t for t in tiles if t.startswith("tile")]
+    tiles = sorted(tiles, key = tile_number)
     tile_name = tiles[index]
-    x, y = tile_name.split("_")[2:]
-    x = int(re.sub(r"[a-zA-Z]", "", x))
-    y = int(re.sub(r"[a-zA-Z.]", "", y))
+    x = tile_x(tile_name)
+    y = tile_y(tile_name)
     if center:
         tile = Image.open(os.path.join(tiles_path, tile_name))
         w, h = tile.size
@@ -47,7 +47,7 @@ def preview(slide_name = "1", tile_size = (256, 256)):
     indices = len(tiles) - 1
     preview = Image.open(os.path.join(tiles_path, "overview_with_tiles.png"))
     draw = ImageDraw.Draw(preview)
-    poly = tumor(open(f"data/{slide_name}.xml"))
+    poly = get_polygon(open(f"data/{slide_name}.xml"))
     reader = WSIReader.open(f"data/{slide_name}.svs")
     W, _ = reader.info.level_dimensions[0]
     scale = 1024 / W
