@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import math
+
 import numpy as np
 from MIL import AttentionMIL
 from geometry import get_polygon, is_inside, index_to_coords
@@ -11,7 +13,7 @@ import os
 
 train = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
-def bags_from_image(slide_name, n_bags = 4):
+def bags_from_image(slide_name, bag_size = 256):
     bags = []
     labels = []
     path = f"feats/{slide_name}.npy"
@@ -19,13 +21,10 @@ def bags_from_image(slide_name, n_bags = 4):
     region = get_polygon(label_path)
     patches = torch.from_numpy(np.load(path))
     n_samples = patches.size(0)
-    base_size = n_samples // n_bags
-    remainder = n_samples % n_bags
+    n_bags = int(math.ceil(n_samples / bag_size))
     start = 0
     for i in trange(n_bags):
-        end = start + base_size
-        if (i == n_bags - 1):
-            end += remainder
+        end = min(start + bag_size, n_samples)
         bag = patches[start:end]
         bags.append(bag)
         label = 0
@@ -39,12 +38,12 @@ def bags_from_image(slide_name, n_bags = 4):
     return bags, labels
 
 class Training_Set(torch.utils.data.Dataset):
-    def __init__(self, train = train, bags_per_image = 4):
+    def __init__(self, train = train, bag_size = 256):
         self.bags = []
         self.labels = []
         print("Initialization...")
         for t in train:
-            b, l = bags_from_image(t, bags_per_image)
+            b, l = bags_from_image(t, bag_size)
             self.bags.extend(b)
             self.labels.extend(l)
 
@@ -64,10 +63,10 @@ if __name__ == "__main__":
 
     input_dim = 2048
     hidden_dim = 64
-    n_epochs = 1
+    n_epochs = 100
     lr = 1e-3
 
-    dataset = Training_Set(train = ["1"], bags_per_image=128)
+    dataset = Training_Set(train)
     dataset.debug()
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
