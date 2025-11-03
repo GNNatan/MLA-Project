@@ -7,6 +7,7 @@ from MIL import AttentionMIL
 from geometry import get_polygon, is_inside, index_to_coords
 from tqdm import tqdm, trange
 
+import os
 
 train = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
@@ -74,7 +75,22 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCEWithLogitsLoss()
 
-    for epoch in trange(n_epochs):
+    save_dir = 'checkpoints'
+    os.makedirs(save_dir, exists_ok = True)
+    best_loss = float("inf")
+
+    #resume from checkpoint
+
+    resume_path = None
+    start_epoch = 0
+    if resume_path and os.exists(resume_path):
+        checkpoint = torch.load(resume_path, map_location = device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']
+
+
+    for epoch in trange(start_epoch, n_epochs):
         total_loss = 0
         correct = 0
         for bag, label in loader:
@@ -91,7 +107,22 @@ if __name__ == "__main__":
             total_loss += loss.item()
         acc = correct/ len(dataset)
         print(f"Epoch {epoch+1}: loss={total_loss/len(dataset):.4f}, acc={acc:.2f}")
-
-    bag, label = dataset[0]
-    _, A = model(bag.to(device))
-    print("Attention weights:", A.squeeze().detach().cpu().numpy())
+        if((epoch + 1)% 20 == 0):
+            checkpoint_path = os.path.join(save_dir, f"mil_model_{epoch+1}.pth")
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': total_loss / len(dataset)
+            }, checkpoint_path)
+        if((total_loss / len(dataset)) < best_loss):
+            best_loss = total_loss/len(dataset)
+            best_path = os.path.join(save_dir, "mil_model_best.pth")
+        torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': total_loss / len(dataset)
+            }, best_path)
+        
+    print('Finished Training!')
