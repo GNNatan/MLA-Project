@@ -30,7 +30,10 @@ def index_to_coords(index:int, slide_name = "1", center = True):
     tiles = os.listdir(tiles_path)
     tiles = [t for t in tiles if t.startswith("tile")]
     tiles = sorted(tiles, key = tile_number)
-    tile_name = tiles[index]
+    try:
+        tile_name = tiles[index]
+    except IndexError:
+        raise IndexError(f"{index} is out of range for list of size {len(tiles)}")
     x = tile_x(tile_name)
     y = tile_y(tile_name)
     if center:

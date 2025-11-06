@@ -41,16 +41,22 @@ if __name__ == "__main__":
     folders = [f"tiles/{i}" for i in range(1, 25)]
     for folder in folders:
         print(f"Reading {folder}")
+        save_name = folder.split("/")[1]
+        out_path = f"{os.path.join(output_dir, save_name)}.npy"
+        if os.path.exists(out_path):
+            print(f"{out_path} already exists, skipping,,,")
+            continue
         patches = []
         files = os.listdir(folder)
-        files = [f for f in files if f.startswith("tile_") and f.endswith(".png")]
+        files = [f for f in files if f.startswith("tile")]
         files_sorted = sorted(files, key = tile_number)
+        
         for filename in tqdm(files_sorted):
             full_path = os.path.join(folder, filename)
             with Image.open(full_path) as img:
                 patch = np.array(img)
                 patches.append(patch)
-        save_name = folder.split("/")[1]
+        
         print(f"Extracting features from {folder}")
         feat = extract_features(patches, feat_extractor)
-        np.save(f"{os.path.join(output_dir, save_name)}.npy", feat)
+        np.save(out_path, feat)
