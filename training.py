@@ -6,44 +6,29 @@ import math
 
 import numpy as np
 from MIL import AttentionMIL
-from geometry import get_polygon, is_inside, index_to_coords
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 import os
 
-train = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+train = [str(i) for i in range(1, 19)]
 
-def bags_from_image(slide_name, bag_size = 256):
-    bags = []
-    labels = []
-    path = f"feats/{slide_name}.npy"
-    label_path = f"data/{slide_name}.xml"
-    region = get_polygon(label_path)
-    patches = torch.from_numpy(np.load(path))
-    n_samples = patches.size(0)
-    n_bags = int(math.ceil(n_samples / bag_size))
-    start = 0
-    for i in trange(n_bags):
-        end = min(start + bag_size, n_samples)
-        bag = patches[start:end]
-        bags.append(bag)
-        label = 0
-        for patch_idx in range(start, end):
-            x, y = index_to_coords(patch_idx, slide_name)
-            if is_inside(x, y, region):
-                label = 1
-                break
-        labels.append(label)
-        start = end
+def get_bags(slide_name):
+    bags_npy   = np.load(f"bags/{slide_name}/bags.npy", allow_pickle=True)
+    labels_npy = np.load(f"bags/{slide_name}/labels.npy", allow_pickle=True)
+
+    bags = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
+    labels = torch.from_numpy(np.array(labels_npy, dtype=np.float32))
+
+
     return bags, labels
 
+
 class Training_Set(torch.utils.data.Dataset):
-    def __init__(self, train = train, bag_size = 256):
+    def __init__(self, train = train):
         self.bags = []
         self.labels = []
-        print("Initialization...")
-        for t in train:
-            b, l = bags_from_image(t, bag_size)
+        for t in tqdm(train,position=0, desc="Initialization", leave=False):
+            b, l = get_bags(t)
             self.bags.extend(b)
             self.labels.extend(l)
 
@@ -53,8 +38,15 @@ class Training_Set(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.bags[idx], torch.tensor(self.labels[idx], dtype=torch.float32)
 
-    def debug(self):
-        print(f"{sum(self.labels)} positive bags")
+    def label_count(self):
+        negative = 0.
+        positive = 0.
+        for label in self.labels:
+            negative += 1. - label.item()
+            positive += label.item()
+
+        return negative, positive
+
 
 
 #training
@@ -63,19 +55,21 @@ if __name__ == "__main__":
 
     input_dim = 2048
     hidden_dim = 64
-    n_epochs = 100
+    n_epochs = 300
     lr = 1e-3
 
     dataset = Training_Set(train)
-    dataset.debug()
+    neg, pos = dataset.label_count()
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
     model = AttentionMIL(input_dim, hidden_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()
+    pos_weight = torch.tensor(neg/pos).to(device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) #add penalty to deal with unbalanced dataset
+#    criterion = nn.BCEWithLogitsLoss()
 
-    save_dir = 'checkpoints'
-    os.makedirs(save_dir, exists_ok = True)
+    save_dir = 'checkpoints\\weighted'
+    os.makedirs(save_dir, exist_ok = True)
     best_loss = float("inf")
 
     #resume from checkpoint
@@ -89,7 +83,7 @@ if __name__ == "__main__":
         start_epoch = checkpoint['epoch']
 
 
-    for epoch in trange(start_epoch, n_epochs):
+    for epoch in tqdm(range(start_epoch, n_epochs), position=0, desc="Training"):
         total_loss = 0
         correct = 0
         for bag, label in loader:
@@ -105,7 +99,7 @@ if __name__ == "__main__":
             correct += (pred==label).sum().item()
             total_loss += loss.item()
         acc = correct/ len(dataset)
-        print(f"Epoch {epoch+1}: loss={total_loss/len(dataset):.4f}, acc={acc:.2f}")
+        tqdm.write(f"Epoch {epoch+1}: loss={total_loss/len(dataset):.4f}, acc={acc:.2f}")
         if((epoch + 1)% 20 == 0):
             checkpoint_path = os.path.join(save_dir, f"mil_model_{epoch+1}.pth")
             torch.save({
