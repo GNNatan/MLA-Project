@@ -33,6 +33,35 @@ def bags_from_image(slide_name, bag_size = 256):
     return bags, labels
 
 
+def artificial_bags(training_set, num_negative, num_positive, bag_size=256, seed = 0):
+    keep_positive = int(num_negative > num_positive)
+    target = int(abs(num_positive-num_negative))
+
+    pool = []
+
+    for slide_name in training_set:
+        path = f"feats/{slide_name}.npy"
+        labels = np.load(f"tiles/{slide_name}/labels.npy")
+        patches = np.load(path)
+        pool.extend(patches[labels == keep_positive])
+        
+    np.random.seed(seed)
+    pool = np.array(pool)
+    bags = []
+    for _ in tqdm(range(target), position=0, desc="Balancing training dataset"):
+        idx = np.random.choice(pool.shape[0], bag_size)
+        bag = pool[idx].tolist()
+        bags.append(bag)
+            
+    labels = [keep_positive for _ in range(target)]
+
+    return bags, labels
+
+                
+
+
+
+
 if __name__ == "__main__":
 
     bag_size = 256

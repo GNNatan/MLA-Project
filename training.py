@@ -8,6 +8,8 @@ import numpy as np
 from MIL import AttentionMIL
 from tqdm import tqdm
 
+from bag_extractor import artificial_bags
+
 import os
 
 train = [str(i) for i in range(1, 19)]
@@ -27,6 +29,7 @@ class Training_Set(torch.utils.data.Dataset):
     def __init__(self, train = train):
         self.bags = []
         self.labels = []
+        self.train = train
         for t in tqdm(train,position=0, desc="Initialization", leave=False):
             b, l = get_bags(t)
             self.bags.extend(b)
@@ -39,13 +42,22 @@ class Training_Set(torch.utils.data.Dataset):
         return self.bags[idx], torch.tensor(self.labels[idx], dtype=torch.float32)
 
     def label_count(self):
-        negative = 0.
-        positive = 0.
+        negative = 0
+        positive = 0
         for label in self.labels:
-            negative += 1. - label.item()
-            positive += label.item()
+            negative += int(1 - label.item())
+            positive += int(label.item())
 
         return negative, positive
+    
+    def balance(self, bag_size = 256, seed = 0):
+        n_neg, n_pos = self.label_count()
+        bags_npy, labels_npy = artificial_bags(self.train, n_neg, n_pos, bag_size, seed)
+        bags_torch = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
+        labels_torch = torch.from_numpy(np.array(labels_npy, dtype=np.float32))
+        self.bags.extend(bags_torch)
+        self.labels.extend(labels_torch)
+
 
 
 
@@ -60,15 +72,16 @@ if __name__ == "__main__":
 
     dataset = Training_Set(train)
     neg, pos = dataset.label_count()
+    dataset.balance()               # balancing dataset by adding artificial bags
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
     model = AttentionMIL(input_dim, hidden_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     pos_weight = torch.tensor(neg/pos).to(device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) #add penalty to deal with unbalanced dataset
-#    criterion = nn.BCEWithLogitsLoss()
+#    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) #add penalty to deal with unbalanced dataset
+    criterion = nn.BCEWithLogitsLoss()
 
-    save_dir = 'checkpoints\\weighted'
+    save_dir = 'checkpoints\\balanced'
     os.makedirs(save_dir, exist_ok = True)
     best_loss = float("inf")
 

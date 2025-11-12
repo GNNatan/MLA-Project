@@ -4,14 +4,39 @@ from PIL import Image, ImageDraw
 import numpy as np
 from tqdm import tqdm
 
+from geometry import get_polygon, is_inside, index_to_coords
+from utils import tile_number
+
 from tiatoolbox.wsicore.wsireader import WSIReader
 
 
 def is_background(tile, thr = 0.8) -> bool:
-    """ Returns true if the tile is almost completely white (background), by comparing the mean of the pixels to a threshold."""
     return (tile.astype("float32")/255.).mean() > thr
 
-def main():
+def extract_labels():
+    slide_names = [str(i) for i in range(1, 25)]
+    tile_size = None
+    for slide_name in tqdm(slide_names, position=0, desc="Extracting labels"):
+        labels = list()
+        tiles_folder = f"tiles/{slide_name}"
+        poly_path = f"data/{slide_name}.xml"
+        region = get_polygon(poly_path)
+        tiles = os.listdir(tiles_folder)
+        tiles = [t for t in tiles if t.startswith("tile")]
+        for tile_name in tqdm(tiles, position=1, desc=f"Slide {slide_name}", leave=False):
+            tile_idx  = tile_number(tile_name)
+            if tile_size is None:
+                tile = Image.open(os.path.join(tiles_folder, tile_name))
+                tile_size = tile.size
+            x, y = index_to_coords(tile_idx, slide_name, tile_size = tile_size)
+            label = int(is_inside(x, y, region))
+            labels.append(label)
+        np.save(f"tiles/{slide_name}/labels.npy", labels)
+
+
+
+
+def extract_tiles():
     ap = argparse.ArgumentParser()
     ap.add_argument("--wsi_path", required=True, help="Path to your .svs")
     ap.add_argument("--out_dir", default="out", help="Path to output directory")
@@ -74,4 +99,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    extract_labels()

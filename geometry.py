@@ -25,7 +25,7 @@ def is_inside(x, y, polygon):
     return polygon.contains(point) or polygon.touches(point)
 
 
-def index_to_coords(index:int, slide_name = "1", center = True):
+def index_to_coords(index:int, slide_name = "1", center = True, tile_size = None):
     tiles_path = f"tiles/{slide_name}"
     tiles = os.listdir(tiles_path)
     tiles = [t for t in tiles if t.startswith("tile")]
@@ -37,8 +37,10 @@ def index_to_coords(index:int, slide_name = "1", center = True):
     x = tile_x(tile_name)
     y = tile_y(tile_name)
     if center:
-        tile = Image.open(os.path.join(tiles_path, tile_name))
-        w, h = tile.size
+        if tile_size is None:
+            tile = Image.open(os.path.join(tiles_path, tile_name))
+            tile_size = tile.size
+        w, h = tile_size
         x += int(w/2)
         y += int(h/2)
     return x, y
