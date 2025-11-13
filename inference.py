@@ -10,9 +10,9 @@ test_set = [str(i) for i in range(19, 25)]
 
 
 def softmax(x):
-    x = np.array(x, dtpe=np.float64)
+    x = np.array(x, dtype=np.float64)
     e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum
+    return e_x / e_x.sum()
 
 
 #model parameters
@@ -37,13 +37,13 @@ with torch.no_grad():
         bags = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
         bag_values = []
         for bag in bags:
-            bag.to(device)
+            bag = bag.to(device)
             _, attn = model(bag)
-            bag_values.extend(attn)
+            bag_values.extend(attn.cpu().numpy().flatten())
         attentions.append(bag_values)
 
 scores = []
 for bag_values in attentions:
     scores.append(softmax(bag_values))
-    
+
 
