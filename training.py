@@ -10,6 +10,8 @@ from tqdm import tqdm
 
 from bag_extractor import artificial_bags
 
+from utils import softmax
+
 import os
 
 train = [str(i) for i in range(1, 19)]
@@ -39,8 +41,8 @@ class Training_Set(torch.utils.data.Dataset):
         return len(self.bags)
     
     def __getitem__(self, idx):
-        return self.bags[idx], torch.tensor(self.labels[idx], dtype=torch.float32)
-
+        return self.bags[idx], self.labels[idx].detach().clone().requires_grad_(True)
+    
     def label_count(self):
         negative = 0
         positive = 0
@@ -58,7 +60,8 @@ class Training_Set(torch.utils.data.Dataset):
         self.bags.extend(bags_torch)
         self.labels.extend(labels_torch)
 
-
+def normalize_labels(label):
+    return softmax(label)
 
 
 #training
@@ -72,14 +75,14 @@ if __name__ == "__main__":
 
     dataset = Training_Set(train)
     neg, pos = dataset.label_count()
-    dataset.balance()               # balancing dataset by adding artificial bags
+ #   dataset.balance()               # balancing dataset by adding artificial bags
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
     model = AttentionMIL(input_dim, hidden_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     pos_weight = torch.tensor(neg/pos).to(device)
 #    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) #add penalty to deal with unbalanced dataset
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.MSELoss()
 
     save_dir = 'checkpoints\\balanced'
     os.makedirs(save_dir, exist_ok = True)
@@ -102,7 +105,8 @@ if __name__ == "__main__":
         for bag, label in loader:
             bag, label = bag[0].to(device), label.to(device)
             output, attn = model(bag)
-            loss = criterion(output.view(-1), label)
+            label_norm = normalize_labels(label)
+            loss = criterion(softmax(attn.squeeze()), label_norm)
 
             optimizer.zero_grad()
             loss.backward()

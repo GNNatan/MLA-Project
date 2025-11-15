@@ -22,12 +22,10 @@ def bags_from_image(slide_name, bag_size = 256):
         end = min(start + bag_size, n_samples)
         bag = patches[start:end]
         bags.append(bag)
-        label = 0
+        label = []
         for patch_idx in tqdm(range(start, end), position= 2, desc=f"Calculating label", leave=False):
             x, y = index_to_coords(patch_idx, slide_name)
-            if is_inside(x, y, region):
-                label = 1
-                break
+            label.append(int(is_inside(x, y, region)))
         labels.append(label)
         start = end
     return bags, labels
