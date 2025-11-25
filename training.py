@@ -2,15 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import math
+import sys
 
 import numpy as np
 from MIL import AttentionMIL
 from tqdm import tqdm
 
 from bag_extractor import artificial_bags
-
-from utils import softmax
 
 import os
 
@@ -21,18 +19,17 @@ def get_bags(slide_name):
     labels_npy = np.load(f"bags/{slide_name}/labels.npy", allow_pickle=True)
 
     bags = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
-    labels = torch.from_numpy(np.array(labels_npy, dtype=np.float32))
-
+    labels = [torch.from_numpy(np.array(label, dtype=np.float32)) for label in labels_npy]
 
     return bags, labels
 
 
 class Training_Set(torch.utils.data.Dataset):
-    def __init__(self, train = train):
+    def __init__(self, train=train):
         self.bags = []
         self.labels = []
         self.train = train
-        for t in tqdm(train,position=0, desc="Initialization", leave=False):
+        for t in tqdm(train, position=0, desc="Initialization", leave=False):
             b, l = get_bags(t)
             self.bags.extend(b)
             self.labels.extend(l)
@@ -41,30 +38,42 @@ class Training_Set(torch.utils.data.Dataset):
         return len(self.bags)
     
     def __getitem__(self, idx):
-        return self.bags[idx], self.labels[idx].detach().clone().requires_grad_(True)
-    
+        return self.bags[idx], self.labels[idx].float()
+
     def label_count(self):
         negative = 0
         positive = 0
-        for label in self.labels:
+        for labels in self.labels:
+            label = torch.max(labels)
             negative += int(1 - label.item())
             positive += int(label.item())
 
         return negative, positive
     
-    def balance(self, bag_size = 256, seed = 0):
+    def balance(self, bag_size=256, seed=0):
         n_neg, n_pos = self.label_count()
         bags_npy, labels_npy = artificial_bags(self.train, n_neg, n_pos, bag_size, seed)
         bags_torch = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
-        labels_torch = torch.from_numpy(np.array(labels_npy, dtype=np.float32))
+
+        labels_torch = [torch.from_numpy(np.array(label, dtype=np.float32)) for label in labels_npy]
+
         self.bags.extend(bags_torch)
         self.labels.extend(labels_torch)
 
+
+
 def normalize_labels(label):
-    return softmax(label)
+    if label.sum() > 0:
+        return label / label.sum()
+    else:
+        return torch.zeros_like(label)
 
 
-#training
+def pool_labels(label):
+    return label.max()
+
+
+# training
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -72,67 +81,92 @@ if __name__ == "__main__":
     hidden_dim = 64
     n_epochs = 300
     lr = 1e-3
+    coeff = 1.
 
     dataset = Training_Set(train)
-    neg, pos = dataset.label_count()
- #   dataset.balance()               # balancing dataset by adding artificial bags
+
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
     model = AttentionMIL(input_dim, hidden_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    pos_weight = torch.tensor(neg/pos).to(device)
-#    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) #add penalty to deal with unbalanced dataset
-    criterion = nn.MSELoss()
+    criterion_bag = nn.BCEWithLogitsLoss()
+    criterion_instance = nn.MSELoss()
 
-    save_dir = 'checkpoints\\balanced'
-    os.makedirs(save_dir, exist_ok = True)
+    save_dir = os.path.join("checkpoints", "baseline")
+    os.makedirs(save_dir, exist_ok=True)
     best_loss = float("inf")
-
-    #resume from checkpoint
 
     resume_path = None
     start_epoch = 0
-    if resume_path and os.exists(resume_path):
-        checkpoint = torch.load(resume_path, map_location = device)
+
+    if resume_path is not None and os.path.exists(resume_path):
+        checkpoint = torch.load(resume_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
 
+    epochs = tqdm(range(start_epoch, n_epochs), position=0, desc="Training")
 
-    for epoch in tqdm(range(start_epoch, n_epochs), position=0, desc="Training"):
-        total_loss = 0
+    model.train()
+    for epoch in epochs:
+        total_loss = 0.0
         correct = 0
+
         for bag, label in loader:
-            bag, label = bag[0].to(device), label.to(device)
+            bag = bag.squeeze(0).to(device)
+            label = label.squeeze(0).to(device)
+
             output, attn = model(bag)
-            label_norm = normalize_labels(label)
-            loss = criterion(softmax(attn.squeeze()), label_norm)
+
+            label_pool = pool_labels(label.squeeze())
+            label_pool = label_pool.view(1).to(device)
+
+            label_norm = normalize_labels(label.squeeze())
+
+            bag_loss = criterion_bag(output.view_as(label_pool), label_pool)
+
+            if coeff < 1.0:
+                attn_vec = attn.squeeze()
+                instance_loss = criterion_instance(attn_vec, label_norm)
+            else:
+                instance_loss = torch.tensor(0.0, device=device)
+
+            loss = coeff * bag_loss + (1.0 - coeff) * instance_loss
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            pred = torch.sigmoid(output).round()
-            correct += (pred==label).sum().item()
+            with torch.no_grad():
+                prob = torch.sigmoid(output.view(-1))
+                pred = (prob > 0.5).long()
+                true_label = label_pool.long()
+                correct += int(pred.item() == true_label.item())
+
             total_loss += loss.item()
-        acc = correct/ len(dataset)
-        tqdm.write(f"Epoch {epoch+1}: loss={total_loss/len(dataset):.4f}, acc={acc:.2f}")
-        if((epoch + 1)% 20 == 0):
+        
+        avg_loss = total_loss / len(loader)
+        accuracy = correct / len(loader)
+
+        epochs.set_postfix(loss=avg_loss, acc=accuracy)
+
+        if (epoch + 1) % 20 == 0:
             checkpoint_path = os.path.join(save_dir, f"mil_model_{epoch+1}.pth")
             torch.save({
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'loss': total_loss / len(dataset)
+                'loss': avg_loss
             }, checkpoint_path)
-        if((total_loss / len(dataset)) < best_loss):
-            best_loss = total_loss/len(dataset)
+
+        if avg_loss < best_loss:
+            best_loss = avg_loss
             best_path = os.path.join(save_dir, "mil_model_best.pth")
-        torch.save({
+            torch.save({
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'loss': total_loss / len(dataset)
+                'loss': best_loss
             }, best_path)
         
     print('Finished Training!')

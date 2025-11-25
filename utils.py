@@ -2,6 +2,7 @@ import re
 import numpy as np
 
 
+
 def tile_number(file_name):
     n = file_name.split("_")[1]
     return int(n)
@@ -15,12 +16,6 @@ def tile_x(file_name):
 def tile_y(file_name):
     y = file_name.split("_")[3]
     return int(re.sub(r"[a-zA-Z.]", "", y))
-
-
-def softmax(x):
-    x = np.array(x, dtype=np.float64)
-    e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum()
 
 def normalize(x):
     x = np.array(x, dtype=np.float64)

@@ -7,7 +7,7 @@ class AttentionMIL(nn.Module):
     def __init__(self, input_dim, hidden_dim, n_classes=1):
         super().__init__()
 
-        self.feature_extractor = nn.Sequential(
+        self.embedding = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.25)
@@ -22,12 +22,14 @@ class AttentionMIL(nn.Module):
         self.classifier = nn.Linear(hidden_dim, n_classes)
 
     def forward(self, bag):
-        H = self.feature_extractor(bag)
+        if bag.dim() == 3:                   # shape (1, N, D)
+            bag = bag.squeeze(0)             # -> (N, D)
 
-        A = self.attention(H)
-        A = torch.softmax(A, dim=0)
+        H = self.embedding(bag)              # (N, hidden)
+        A = self.attention(H)                # (N, 1)
+        A = torch.softmax(A, dim=0)          # weights
 
-        M = torch.sum(A*H, dim=0)
+        M = torch.sum(A * H, dim=0)          # (hidden,)
+        out = self.classifier(M)             # (1,) raw logit
 
-        out = self.classifier(M)
-        return out, A
+        return out, A.squeeze()
