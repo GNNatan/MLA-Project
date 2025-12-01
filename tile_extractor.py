@@ -14,7 +14,7 @@ def is_background(tile, thr = 0.8) -> bool:
     return (tile.astype("float32")/255.).mean() > thr
 
 def extract_labels():
-    slide_names = [str(i) for i in range(1, 25)]
+    slide_names = [str(i) for i in range(10, 25)]
     tile_size = None
     for slide_name in tqdm(slide_names, position=0, desc="Extracting labels"):
         labels = list()
@@ -22,7 +22,7 @@ def extract_labels():
         poly_path = f"data/{slide_name}.xml"
         region = get_polygon(poly_path)
         tiles = os.listdir(tiles_folder)
-        tiles = [t for t in tiles if t.startswith("tile")]
+        tiles = sorted([t for t in tiles if t.startswith("tile")], key = tile_number)
         for tile_name in tqdm(tiles, position=1, desc=f"Slide {slide_name}", leave=False):
             tile_idx  = tile_number(tile_name)
             if tile_size is None:

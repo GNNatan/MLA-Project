@@ -8,24 +8,26 @@ from PIL import Image, ImageDraw
 from utils import tile_x, tile_y
 import numpy as np
 import os
-from tqdm.contrib import tzip
+from tqdm import tqdm
+
+from utils import tile_number, preprocess
 
 from MIL import AttentionMIL
 
-test_set = [str(i) for i in range(1, 25)]
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
+@torch.no_grad()
+def infer_patch(model, patch):
+    model.eval()
+    patch = patch.to(device).unsqueeze(0).unsqueeze(0)    # [1,1,3,224,224]
+    Y_prob, _, _ = model(patch)              # shape [1,1]
+    return Y_prob.item()
 
-
-def preview(scores, slide_name, checkpoint_name, tile_size=None):
-    folder = f"tiles/{slide_name}"
-    files = os.listdir(folder)
-    files = [f for f in files if f.startswith("tile")]
-
-    if len(files) != len(scores):
-        print(f"[WARNING] Files={len(files)}, scores={len(scores)} mismatch.")
-        return
-
-    os.makedirs(f"inference/{checkpoint_name}", exist_ok=True)
+def preview(model, slide_name, model_name="attention", tile_size=None):    
+    slide_path = f"tiles/{slide_name}"
+    files = os.listdir(slide_path)
+    files = sorted([f for f in files if f.startswith("tile")], key = tile_number)
+    os.makedirs(f"inference/{model_name}", exist_ok=True)
 
     reader = WSIReader.open(f"data/{slide_name}.svs")
     full_width, full_height = reader.info.level_dimensions[0]
@@ -44,8 +46,9 @@ def preview(scores, slide_name, checkpoint_name, tile_size=None):
 
     tile_width, tile_height = tile_size
 
-    for file, score in tzip(files, scores):
-        score = float(score)
+    for file in tqdm(files, desc=f"Evaluating slide {slide_name}"):
+        patch = preprocess(Image.open(f"tiles/{slide_name}/{file}").convert("RGB"))
+        score = infer_patch(model, patch)
 
         color = (int(255 * score), 0, int(255 * (1 - score)), 64)
 
@@ -57,54 +60,18 @@ def preview(scores, slide_name, checkpoint_name, tile_size=None):
             int(y * scale),
             int((x + tile_width) * scale),
             int((y + tile_height) * scale)
-        ]
+            ]
         draw.rectangle(rect, fill=color)
-
-    img.save(f"inference/{checkpoint_name}/{slide_name}.png")
-
-
-
-# Model parameters
-input_dim = 2048
-hidden_dim = 64
+    img.save(f"inference/attention/{slide_name}.png")
 
 if __name__ == "__main__":
-    for checkpoint_name in ["baseline"]:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    test_set = [str(i) for i in range(1, 25)]
+    checkpoint_name = "checkpoints/attention/best.pth"
+    checkpoint = torch.load(checkpoint_name, map_location=device)
 
-        checkpoint_path = f"checkpoints/{checkpoint_name}/mil_model_300.pth"
-
-        model = AttentionMIL(input_dim, hidden_dim)
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        model = model.to(device)
-        model.eval()
-
-        scores = []
-
-        with torch.no_grad():
-            for slide_name in test_set:
-
-                bags_npy = np.load(
-                    f"bags/{slide_name}/bags.npy", allow_pickle=True
-                )
-                bags = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
-
-                bag_values = []
-
-                for bag in bags:
-                    if bag.dim() == 3:
-                        bag = bag.squeeze(0)
-                    bag = bag.to(device)
-
-                    out, attn = model(bag)
-
-                    attn_np = attn.cpu().numpy()
-
-                    bag_values.extend(attn_np.tolist())
-
-                score = torch.tensor(bag_values)
-                scores.append(score)
-
-        for index, slide_name in enumerate(test_set):
-            preview(scores[index], slide_name, checkpoint_name)
+    model = AttentionMIL("attention")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device)
+    
+    for slide_name in test_set:
+        preview(model, slide_name)

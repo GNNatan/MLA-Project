@@ -1,172 +1,263 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.optim as optim
 
-import sys
 
 import numpy as np
-from MIL import AttentionMIL
-from tqdm import tqdm
-
-from bag_extractor import artificial_bags
 
 import os
 
-train = [str(i) for i in range(1, 19)]
+from PIL import Image
 
-def get_bags(slide_name):
-    bags_npy   = np.load(f"bags/{slide_name}/bags.npy", allow_pickle=True)
-    labels_npy = np.load(f"bags/{slide_name}/labels.npy", allow_pickle=True)
+from tqdm import tqdm
 
-    bags = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
-    labels = [torch.from_numpy(np.array(label, dtype=np.float32)) for label in labels_npy]
+from MIL import AttentionMIL
 
-    return bags, labels
+from utils import tile_number, preprocess
 
+DEBUG = True
 
-class Training_Set(torch.utils.data.Dataset):
-    def __init__(self, train=train):
+np.random.seed(42)
+
+checkpoint_path = os.path.join("checkpoints", "attention")
+
+os.makedirs(checkpoint_path, exist_ok=True)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = AttentionMIL(pooling="attention").to(device)
+
+optimizer = optim.Adam(
+    model.parameters(),
+    lr = 1e-4,
+    weight_decay = 5e-4
+)
+
+slides_dir = "tiles"
+
+class MultiBagMILDataset(torch.utils.data.Dataset):
+    def __init__(self, slides, bag_size = 350, transform = preprocess):
+        self.bag_size = bag_size
+        self.transform = transform
+
         self.bags = []
         self.labels = []
-        self.train = train
-        for t in tqdm(train, position=0, desc="Initialization", leave=False):
-            b, l = get_bags(t)
-            self.bags.extend(b)
-            self.labels.extend(l)
+
+        total_pos = 0
+        total_neg = 0
+
+        for slide in tqdm(slides, leave=False):
+            slide_path = os.path.join(slides_dir, slide)
+
+            if not os.path.isdir(slide_path):
+                continue
+        
+            patch_files = os.listdir(slide_path)
+            patch_files = sorted([f for f in patch_files if f.startswith("tile")], key = tile_number)
+            patch_labels = np.load(os.path.join(slide_path, "labels.npy"))
+
+            indices = [tile_number(p) for p in patch_files]
+
+            np.random.shuffle(indices)
+
+            pos_idx = [i for i in indices if patch_labels[i] == 1]
+            neg_idx = [i for i in indices if patch_labels[i] == 0]
+
+            def generate_bag(force_negative = False):
+                if force_negative:
+                    if len(neg_idx) >= bag_size:
+                        bag_indices = neg_idx[:bag_size]
+                        for index in bag_indices:
+                            try:
+                                indices.remove(index)
+                            except ValueError:
+                                pass
+                        del neg_idx[:bag_size]
+                        return bag_indices, 0
+                j = min(bag_size, len(indices))
+                bag_indices = indices[:j]
+                label = 0
+                for index in bag_indices:
+                    label = max(label, patch_labels[index])
+                    try:
+                        pos_idx.remove(index)
+                    except ValueError:
+                        pass
+                    try:
+                        neg_idx.remove(index)
+                    except ValueError:
+                        pass
+                del indices[:j]
+                return bag_indices, label
+                
+            pos = 0
+            neg = 0
+
+            while len(indices) > 0:
+                force_negative = pos > neg                
+                bag_indices, label = generate_bag(force_negative=force_negative)
+                pos += label
+                neg += 1 - label
+                self.bags.append((slide_path, bag_indices))
+                self.labels.append(torch.tensor(label, dtype=torch.float32))
+
+            total_pos += pos
+            total_neg += neg
+
+        if DEBUG:
+            print(f"Created {total_pos} positive and {total_neg} negative bags. Total: {total_pos+total_neg}")
+
+
 
     def __len__(self):
         return len(self.bags)
     
     def __getitem__(self, idx):
-        return self.bags[idx], self.labels[idx].float()
 
-    def label_count(self):
-        negative = 0
-        positive = 0
-        for labels in self.labels:
-            label = torch.max(labels)
-            negative += int(1 - label.item())
-            positive += int(label.item())
+        slide_path, indices = self.bags[idx]
 
-        return negative, positive
-    
-    def balance(self, bag_size=256, seed=0):
-        n_neg, n_pos = self.label_count()
-        bags_npy, labels_npy = artificial_bags(self.train, n_neg, n_pos, bag_size, seed)
-        bags_torch = [torch.from_numpy(np.array(bag, dtype=np.float32)) for bag in bags_npy]
+        patch_files = os.listdir(slide_path)
+        patch_files = sorted([f for f in patch_files if f.startswith("tile")], key = tile_number)
 
-        labels_torch = [torch.from_numpy(np.array(label, dtype=np.float32)) for label in labels_npy]
+        patches = []
 
-        self.bags.extend(bags_torch)
-        self.labels.extend(labels_torch)
+        for i in indices:
+            img = Image.open(os.path.join(slide_path, patch_files[i])).convert('RGB')
+            if self.transform:
+                img = self.transform(img)
+
+            patches.append(img)
+        
+        patches = torch.stack(patches)
+
+        return patches, self.labels[idx]
 
 
 
-def normalize_labels(label):
-    if label.sum() > 0:
-        return label / label.sum()
-    else:
-        return torch.zeros_like(label)
+
+def train_one_epoch(model, loader, optimizer):
+    model.train()
+
+    train_loss = 0.
+    train_err = 0.
+
+    for data, label in tqdm(loader, desc= "Training", leave = False):
+
+        data = data.to(device)
+        label = label.float().to(device)
+
+        optimizer.zero_grad()        
+
+        loss, _ = model.calculate_objective(data, label)
+        train_loss += loss.item()
+
+        error, _ = model.calculate_classification_error(data, label)
+
+        train_err += error
+
+        loss.backward()
+        optimizer.step()
+
+    train_err /= len(loader)
+    train_loss /= len(loader)
+
+    return train_loss, train_err
 
 
-def pool_labels(label):
-    return label.max()
+@torch.no_grad()
+def validate(model, loader):
+    model.eval()
 
+    val_loss = 0.
+    val_err = 0.
 
-# training
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    for data, label in tqdm(loader, desc= "Validating", leave = False):
 
-    input_dim = 2048
-    hidden_dim = 64
-    n_epochs = 300
-    lr = 1e-3
-    coeff = 1.
+        data = data.to(device)
+        label = label.float().to(device) 
 
-    dataset = Training_Set(train)
+        loss, _ = model.calculate_objective(data, label)
+        val_loss += loss.item()
 
-    loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
+        error, _ = model.calculate_classification_error(data, label)
 
-    model = AttentionMIL(input_dim, hidden_dim).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion_bag = nn.BCEWithLogitsLoss()
-    criterion_instance = nn.MSELoss()
+        val_err += error
 
-    save_dir = os.path.join("checkpoints", "baseline")
-    os.makedirs(save_dir, exist_ok=True)
-    best_loss = float("inf")
+    val_err /= len(loader)
+    val_loss /= len(loader)
 
-    resume_path = None
-    start_epoch = 0
+    return val_loss, val_err
 
-    if resume_path is not None and os.path.exists(resume_path):
-        checkpoint = torch.load(resume_path, map_location=device)
+def train_model(model, train_loader, val_loader, epochs=100):
+
+    latest_checkpoint = os.path.join(checkpoint_path, f"latest.pth")
+
+    checkpoint_epoch = None
+
+    best_val = None
+
+    if os.path.exists(latest_checkpoint):
+        checkpoint = torch.load(latest_checkpoint)
+        checkpoint_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
+        best_val = checkpoint['best_val']
 
-    epochs = tqdm(range(start_epoch, n_epochs), position=0, desc="Training")
+    start_epoch = 0
 
-    model.train()
+    if checkpoint_epoch is not None:
+        start_epoch = checkpoint_epoch
+
+    epochs = tqdm(range(start_epoch, epochs), desc="Training loop", initial=start_epoch, total=epochs)
+
     for epoch in epochs:
-        total_loss = 0.0
-        correct = 0
+        train_loss, train_err = train_one_epoch(model, train_loader, optimizer)
 
-        for bag, label in loader:
-            bag = bag.squeeze(0).to(device)
-            label = label.squeeze(0).to(device)
+        val_loss, val_err = validate(model, val_loader)
 
-            output, attn = model(bag)
-
-            label_pool = pool_labels(label.squeeze())
-            label_pool = label_pool.view(1).to(device)
-
-            label_norm = normalize_labels(label.squeeze())
-
-            bag_loss = criterion_bag(output.view_as(label_pool), label_pool)
-
-            if coeff < 1.0:
-                attn_vec = attn.squeeze()
-                instance_loss = criterion_instance(attn_vec, label_norm)
-            else:
-                instance_loss = torch.tensor(0.0, device=device)
-
-            loss = coeff * bag_loss + (1.0 - coeff) * instance_loss
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            with torch.no_grad():
-                prob = torch.sigmoid(output.view(-1))
-                pred = (prob > 0.5).long()
-                true_label = label_pool.long()
-                correct += int(pred.item() == true_label.item())
-
-            total_loss += loss.item()
-        
-        avg_loss = total_loss / len(loader)
-        accuracy = correct / len(loader)
-
-        epochs.set_postfix(loss=avg_loss, acc=accuracy)
+        val = val_err + val_loss
 
         if (epoch + 1) % 20 == 0:
-            checkpoint_path = os.path.join(save_dir, f"mil_model_{epoch+1}.pth")
             torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_loss
-            }, checkpoint_path)
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val': best_val}, os.path.join(checkpoint_path, f"epoch_{epoch+1}.pth"))
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            best_path = os.path.join(save_dir, "mil_model_best.pth")
+
+        if best_val is None or val < best_val:
+            best_val = val
+
             torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': best_loss
-            }, best_path)
-        
-    print('Finished Training!')
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val': best_val}, os.path.join(checkpoint_path, "best.pth"))
+
+
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val': best_val}, latest_checkpoint)
+
+        epochs.set_postfix(ordered_dict={"loss": val_loss, "err": val_err,"last": val, "best": best_val})
+
+
+def main():
+    train_names = [str(i) for i in range(9)]
+
+    val_names = [str(i) for i in range(9, 17)]
+
+    train_dataset = MultiBagMILDataset(train_names)
+    val_dataset = MultiBagMILDataset(val_names)
+
+    train_loader = torch.utils.data.DataLoader(train_dataset, num_workers=16)
+    val_loader = torch.utils.data.DataLoader(val_dataset, num_workers = 16)
+
+    train_model(model, train_loader, val_loader, 100)
+
+    print("Finished training!")
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,7 @@
 import re
 import numpy as np
 
+from torchvision import transforms
 
 
 def tile_number(file_name):
@@ -20,3 +21,11 @@ def tile_y(file_name):
 def normalize(x):
     x = np.array(x, dtype=np.float64)
     return (x - np.min(x)) / (np.max(x) - np.min(x))
+
+
+preprocess = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean = [0.485, 0.456, 0.406],
+                         std = [0.229, 0.224, 0.225])
+])
