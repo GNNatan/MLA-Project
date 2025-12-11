@@ -65,8 +65,8 @@ def preview(model, slide_name, model_name="attention", tile_size=None):
     img.save(f"inference/attention/{slide_name}.png")
 
 if __name__ == "__main__":
-    test_set = [str(i) for i in range(1, 25)]
-    checkpoint_name = "checkpoints/attention/best.pth"
+    test_set = [str(i) for i in range(17, 25)]
+    checkpoint_name = "checkpoints/attention/latest.pth"
     checkpoint = torch.load(checkpoint_name, map_location=device)
 
     model = AttentionMIL("attention")

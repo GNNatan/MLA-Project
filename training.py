@@ -25,14 +25,6 @@ os.makedirs(checkpoint_path, exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = AttentionMIL(pooling="attention").to(device)
-
-optimizer = optim.Adam(
-    model.parameters(),
-    lr = 1e-4,
-    weight_decay = 5e-4
-)
-
 slides_dir = "tiles"
 
 class MultiBagMILDataset(torch.utils.data.Dataset):
@@ -190,6 +182,12 @@ def validate(model, loader):
 
 def train_model(model, train_loader, val_loader, epochs=100):
 
+    optimizer = optim.Adam(
+    model.parameters(),
+    lr = 1e-4,
+    weight_decay = 5e-4
+    )
+
     latest_checkpoint = os.path.join(checkpoint_path, f"latest.pth")
 
     checkpoint_epoch = None
@@ -245,9 +243,11 @@ def train_model(model, train_loader, val_loader, epochs=100):
 
 
 def main():
-    train_names = [str(i) for i in range(9)]
+    model = AttentionMIL(pooling="attention").to(device)
+    
+    train_names = [str(i) for i in range(14)]
 
-    val_names = [str(i) for i in range(9, 17)]
+    val_names = [str(i) for i in range(14, 17)]
 
     train_dataset = MultiBagMILDataset(train_names)
     val_dataset = MultiBagMILDataset(val_names)
