@@ -4,12 +4,11 @@ from tqdm import tqdm
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
-from MIL import AttentionMIL
+from models import AttentionMIL, DummyModel
 
 from training import MultiBagMILDataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def calculate_metrics(model, loader):
     model.eval()
@@ -58,6 +57,19 @@ def main():
     accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
     
     with open("metrics.txt", 'w') as f:
+        f.write(f"Accuracy: {accuracy}\n")
+        f.write(f"Precision: {precision}\n")
+        f.write(f"Recall: {recall}\n")
+        f.write(f"F-Score: {f1}\n")
+        f.write(f"AUC: {auc}\n")
+
+# Dummy model that always predicts True
+    model = DummyModel(pred=1.)
+    model = model.to(device)
+
+    accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
+    
+    with open("metrics_dummy.txt", 'w') as f:
         f.write(f"Accuracy: {accuracy}\n")
         f.write(f"Precision: {precision}\n")
         f.write(f"Recall: {recall}\n")

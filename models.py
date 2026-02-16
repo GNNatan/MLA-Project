@@ -3,6 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class DummyModel(nn.Module):
+    def __init__(self, pred=1.):
+        self.pred = pred
+        super(DummyModel, self).__init__()
+
+    def forward(self, x):
+        Y_prob = torch.full((1,1), 1., device=x.device)
+        Y_pred = torch.full((1,1), self.pred, device=x.device)
+        return Y_prob, Y_pred, None
+
 class AttentionMIL(nn.Module):
     def __init__(self, pooling="attention"):
         super(AttentionMIL, self).__init__()

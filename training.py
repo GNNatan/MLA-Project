@@ -11,7 +11,7 @@ from PIL import Image
 
 from tqdm import tqdm
 
-from MIL import AttentionMIL
+from models import AttentionMIL
 
 from utils import tile_number, preprocess
 

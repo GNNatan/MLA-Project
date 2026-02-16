@@ -7,7 +7,7 @@ import random
 
 import numpy as np
 
-from MIL import AttentionMIL
+from models import AttentionMIL
 
 class Dummy(torch.utils.data.Dataset):
     def __init__(self, n_bags=200, n_instances=10, input_dim=32):

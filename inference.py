@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from utils import tile_number, preprocess
 
-from MIL import AttentionMIL
+from models import AttentionMIL
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
