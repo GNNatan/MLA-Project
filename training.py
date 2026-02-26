@@ -19,7 +19,7 @@ DEBUG = True
 
 np.random.seed(42)
 
-checkpoint_path = os.path.join("checkpoints", "attention")
+checkpoint_path = os.path.join("checkpoints", "mean")
 
 os.makedirs(checkpoint_path, exist_ok=True)
 
@@ -243,7 +243,8 @@ def train_model(model, train_loader, val_loader, epochs=100):
 
 
 def main():
-    model = AttentionMIL(pooling="attention").to(device)
+    print("Training into ", checkpoint_path)
+    model = AttentionMIL(pooling="mean").to(device)
     
     train_names = [str(i) for i in range(14)]
 
