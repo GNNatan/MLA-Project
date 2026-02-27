@@ -20,7 +20,7 @@ class AttentionMIL(nn.Module):
         self.L = 128
         self.ATTENTION_BRANCHES = 1
 
-        self.pooling = "attention" # | "max" | "mean"
+        self.pooling = pooling
 
         self.feature_extractor_1 = nn.Sequential(
             nn.Conv2d(3, 36, kernel_size = 4),
