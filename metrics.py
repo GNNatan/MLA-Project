@@ -44,7 +44,7 @@ def calculate_metrics(model, loader):
 
 def main():
     test_set = [str(i) for i in range(17, 25)]
-    test_data = MultiBagMILDataset(test_set)
+    test_data = MultiBagMILDataset(test_set, balance = False)
 
     test_loader = torch.utils.data.DataLoader(test_data, num_workers=16)
     os.makedirs("metrics", exist_ok=True)

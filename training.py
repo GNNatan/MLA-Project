@@ -28,7 +28,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 slides_dir = "tiles"
 
 class MultiBagMILDataset(torch.utils.data.Dataset):
-    def __init__(self, slides, bag_size = 350, transform = preprocess):
+    def __init__(self, slides, bag_size = 350, transform = preprocess, balance = True):
         self.bag_size = bag_size
         self.transform = transform
 
@@ -86,7 +86,7 @@ class MultiBagMILDataset(torch.utils.data.Dataset):
             neg = 0
 
             while len(indices) > 0:
-                force_negative = pos > neg                
+                force_negative = pos > neg and balance            
                 bag_indices, label = generate_bag(force_negative=force_negative)
                 pos += label
                 neg += 1 - label
