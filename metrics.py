@@ -1,4 +1,5 @@
 import torch
+import os
 
 from tqdm import tqdm
 
@@ -46,22 +47,24 @@ def main():
     test_data = MultiBagMILDataset(test_set)
 
     test_loader = torch.utils.data.DataLoader(test_data, num_workers=16)
+    os.makedirs("metrics", exist_ok=True)
 
-    checkpoint_name = "checkpoints/attention/latest.pth"
-    checkpoint = torch.load(checkpoint_name, map_location=device)
+    for pooling in ["attention", "mean", "max"]:
+        checkpoint_name = f"checkpoints/{pooling}/best.pth"
+        checkpoint = torch.load(checkpoint_name, map_location=device)
 
-    model = AttentionMIL("attention")
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model = model.to(device)
+        model = AttentionMIL(pooling)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model = model.to(device)
 
-    accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
-    
-    with open("metrics.txt", 'w') as f:
-        f.write(f"Accuracy: {accuracy}\n")
-        f.write(f"Precision: {precision}\n")
-        f.write(f"Recall: {recall}\n")
-        f.write(f"F-Score: {f1}\n")
-        f.write(f"AUC: {auc}\n")
+        accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
+        
+        with open(f"metrics/{pooling}.txt", 'w') as f:
+            f.write(f"Accuracy: {accuracy}\n")
+            f.write(f"Precision: {precision}\n")
+            f.write(f"Recall: {recall}\n")
+            f.write(f"F-Score: {f1}\n")
+            f.write(f"AUC: {auc}\n")
 
 # Dummy model that always predicts True
     model = DummyModel(pred=1.)
@@ -69,7 +72,7 @@ def main():
 
     accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
     
-    with open("metrics_dummy.txt", 'w') as f:
+    with open("metrics/dummy.txt", 'w') as f:
         f.write(f"Accuracy: {accuracy}\n")
         f.write(f"Precision: {precision}\n")
         f.write(f"Recall: {recall}\n")
