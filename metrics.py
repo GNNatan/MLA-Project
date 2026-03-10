@@ -1,6 +1,8 @@
 import torch
 import os
 
+import numpy as np
+
 from tqdm import tqdm
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
@@ -30,11 +32,12 @@ def calculate_metrics(model, loader):
         probs.append(prob)
         preds.append(pred)
         labels.append(int(label))
-    
+
     accuracy = accuracy_score(labels, preds)
     precision = precision_score(labels, preds)
     recall = recall_score(labels, preds)
     f1 = f1_score(labels, preds)
+
     auc = roc_auc_score(labels, probs)
 
     return accuracy, precision, recall, f1, auc
@@ -47,10 +50,10 @@ def main():
     test_data = MultiBagMILDataset(test_set, balance = False)
 
     test_loader = torch.utils.data.DataLoader(test_data, num_workers=16)
-    os.makedirs("metrics", exist_ok=True)
+    os.makedirs("metrics/best", exist_ok=True)
 
-    for pooling in ["attention", "mean", "max", "attention_balanced", "max_balanced", "mean_balanced"]:
-        checkpoint_name = f"checkpoints/{pooling}/latest.pth"
+    for pooling in ["attention", "mean", "max"]:
+        checkpoint_name = f"checkpoints/{pooling}/best.pth"
         checkpoint = torch.load(checkpoint_name, map_location=device)
 
         model = AttentionMIL(pooling.split("_")[0])
@@ -59,7 +62,7 @@ def main():
 
         accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
         
-        with open(f"metrics/latest/{pooling}.txt", 'w') as f:
+        with open(f"metrics/best/{pooling}.txt", 'w') as f:
             f.write(f"Accuracy: {accuracy}\n")
             f.write(f"Precision: {precision}\n")
             f.write(f"Recall: {recall}\n")
