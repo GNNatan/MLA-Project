@@ -49,17 +49,17 @@ def main():
     test_loader = torch.utils.data.DataLoader(test_data, num_workers=16)
     os.makedirs("metrics", exist_ok=True)
 
-    for pooling in ["attention", "mean", "max"]:
-        checkpoint_name = f"checkpoints/{pooling}/best.pth"
+    for pooling in ["attention", "mean", "max", "attention_balanced", "max_balanced", "mean_balanced"]:
+        checkpoint_name = f"checkpoints/{pooling}/latest.pth"
         checkpoint = torch.load(checkpoint_name, map_location=device)
 
-        model = AttentionMIL(pooling)
+        model = AttentionMIL(pooling.split("_")[0])
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(device)
 
         accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
         
-        with open(f"metrics/{pooling}.txt", 'w') as f:
+        with open(f"metrics/latest/{pooling}.txt", 'w') as f:
             f.write(f"Accuracy: {accuracy}\n")
             f.write(f"Precision: {precision}\n")
             f.write(f"Recall: {recall}\n")

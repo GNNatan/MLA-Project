@@ -19,7 +19,7 @@ DEBUG = True
 
 np.random.seed(42)
 
-checkpoint_path = os.path.join("checkpoints", "mean")
+checkpoint_path = os.path.join("checkpoints", "max")
 
 os.makedirs(checkpoint_path, exist_ok=True)
 
@@ -244,14 +244,14 @@ def train_model(model, train_loader, val_loader, epochs=100):
 
 def main():
     print("Training into ", checkpoint_path)
-    model = AttentionMIL(pooling="mean").to(device)
+    model = AttentionMIL(pooling="max").to(device)
     
     train_names = [str(i) for i in range(14)]
 
     val_names = [str(i) for i in range(14, 17)]
 
     train_dataset = MultiBagMILDataset(train_names)
-    val_dataset = MultiBagMILDataset(val_names)
+    val_dataset = MultiBagMILDataset(val_names, balance = False)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, num_workers=16)
     val_loader = torch.utils.data.DataLoader(val_dataset, num_workers = 16)

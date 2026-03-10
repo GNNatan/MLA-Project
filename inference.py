@@ -62,16 +62,18 @@ def preview(model, slide_name, model_name="attention", tile_size=None):
             int((y + tile_height) * scale)
             ]
         draw.rectangle(rect, fill=color)
-    img.save(f"inference/attention/{slide_name}.png")
+    img.save(f"inference/{model_name}/{slide_name}.png")
 
 if __name__ == "__main__":
     test_set = [str(i) for i in range(17, 25)]
-    checkpoint_name = "checkpoints/attention/latest.pth"
-    checkpoint = torch.load(checkpoint_name, map_location=device)
+    for pooling in ["attention", "mean", "max", "attention_balanced", "max_balanced", "mean_balanced"]:
+     for cp in ["best", "latest"]:
+        checkpoint_name = f"checkpoints/{pooling}/{cp}.pth"
+        checkpoint = torch.load(checkpoint_name, map_location=device)
 
-    model = AttentionMIL("attention")
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model = model.to(device)
+        model = AttentionMIL(pooling.split("_")[0])
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model = model.to(device)
     
-    for slide_name in test_set:
-        preview(model, slide_name)
+        for slide_name in test_set:
+            preview(model, slide_name, f"{pooling}/{cp}")
