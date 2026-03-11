@@ -7,22 +7,27 @@ from tiatoolbox.wsicore.wsireader import WSIReader
 from tqdm import trange
 
 def get_polygon(file):
-    vertices = []
+    polygons = []
     tree = ET.parse(file)
     root = tree.getroot()
 
     for annot in root.findall(".//Annotation"):
         for region in annot.findall(".//Region"):
+            vertices = []
             for v in region.findall(".//Vertex"):
                 x = float(v.get("X"))
                 y = float(v.get("Y"))
                 vertices.append((round(x), round(y)))
-    return Polygon(vertices)
+            polygons.append(Polygon(vertices))
+    return polygons
 
 
-def is_inside(x, y, polygon):
+def is_inside(x, y, polygons):
     point = Point(x, y)
-    return polygon.contains(point) or polygon.touches(point)
+    for polygon in polygons:
+        if polygon.contains(point) or polygon.touches(point):
+            return True
+    return False
 
 
 def index_to_coords(index:int, slide_name = "1", center = True, tile_size = None):
