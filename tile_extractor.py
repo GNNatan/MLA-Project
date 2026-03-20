@@ -5,16 +5,55 @@ import numpy as np
 from tqdm import tqdm
 
 from geometry import get_polygon, is_inside, index_to_coords
-from utils import tile_number
+from utils import tile_number, tile_x, tile_y
 
 from tiatoolbox.wsicore.wsireader import WSIReader
-
 
 def is_background(tile, thr = 0.8) -> bool:
     return (tile.astype("float32")/255.).mean() > thr
 
+def label_preview(slide_name, tile_size=None):    
+    slide_path = f"tiles/{slide_name}"
+    files = os.listdir(slide_path)
+    files = sorted([f for f in files if f.startswith("tile")], key = tile_number)
+    os.makedirs(f"inference/truth", exist_ok=True)
+    labels = np.load(f"{slide_path}/labels.npy")
+    reader = WSIReader.open(f"data/{slide_name}.svs")
+    full_width, full_height = reader.info.level_dimensions[0]
+
+    target_width = 1024
+    scale = target_width / full_width
+
+    thumb = reader.read_bounds((0, 0, full_width, full_height),
+                               resolution=scale, units="baseline")
+    img = Image.fromarray(thumb)
+    draw = ImageDraw.Draw(img)
+
+    if tile_size is None:
+        first_tile = Image.open(f"tiles/{slide_name}/{files[0]}")
+        tile_size = first_tile.size
+
+    tile_width, tile_height = tile_size
+
+    for index, file in enumerate(tqdm(files, desc=f"Evaluating slide {slide_name}")):
+        score = labels[index]
+
+        color = (int(255 * score), 0, int(255 * (1 - score)), 64)
+
+        x = tile_x(file)
+        y = tile_y(file)
+
+        rect = [
+            int(x * scale),
+            int(y * scale),
+            int((x + tile_width) * scale),
+            int((y + tile_height) * scale)
+            ]
+        draw.rectangle(rect, fill=color)
+    img.save(f"tiles/{slide_name}/overview_with_labels.png")
+
 def extract_labels():
-    slide_names = [str(i) for i in range(10, 25)]
+    slide_names = [str(i) for i in range(1, 25)]
     tile_size = None
     for slide_name in tqdm(slide_names, position=0, desc="Extracting labels"):
         labels = list()
@@ -32,8 +71,7 @@ def extract_labels():
             label = int(is_inside(x, y, region))
             labels.append(label)
         np.save(f"tiles/{slide_name}/labels.npy", labels)
-
-
+        label_preview(slide_name)
 
 
 def extract_tiles():
@@ -96,6 +134,7 @@ def extract_tiles():
     save_path = os.path.join(args.out_dir, "overview_with_tiles.png")
     img.save(save_path)
     print(f"Preview saved to {save_path}")
+
 
 
 if __name__ == "__main__":

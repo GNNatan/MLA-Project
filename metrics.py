@@ -46,14 +46,14 @@ def calculate_metrics(model, loader):
         
 
 def main():
-    test_set = [str(i) for i in range(17, 25)]
+    test_set = [str(i) for i in range(14, 25)]
     test_data = MultiBagMILDataset(test_set, balance = False)
 
     test_loader = torch.utils.data.DataLoader(test_data, num_workers=16)
-    os.makedirs("metrics/best", exist_ok=True)
+    os.makedirs("metrics/latest", exist_ok=True)
 
     for pooling in ["attention", "mean", "max"]:
-        checkpoint_name = f"checkpoints/{pooling}/best.pth"
+        checkpoint_name = f"checkpoints/{pooling}/latest.pth"
         checkpoint = torch.load(checkpoint_name, map_location=device)
 
         model = AttentionMIL(pooling.split("_")[0])
@@ -62,7 +62,7 @@ def main():
 
         accuracy, precision, recall, f1, auc = calculate_metrics(model, test_loader)
         
-        with open(f"metrics/best/{pooling}.txt", 'w') as f:
+        with open(f"metrics/latest/{pooling}.txt", 'w') as f:
             f.write(f"Accuracy: {accuracy}\n")
             f.write(f"Precision: {precision}\n")
             f.write(f"Recall: {recall}\n")

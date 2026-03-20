@@ -17,7 +17,7 @@ def get_polygon(file):
             for v in region.findall(".//Vertex"):
                 x = float(v.get("X"))
                 y = float(v.get("Y"))
-                vertices.append((round(x), round(y)))
+                vertices.append((x, y))
             polygons.append(Polygon(vertices))
     return polygons
 
